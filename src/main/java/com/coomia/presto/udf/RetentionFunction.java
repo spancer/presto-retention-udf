@@ -34,8 +34,8 @@ import io.prestosql.spi.function.Description;
 import io.prestosql.spi.function.InputFunction;
 import io.prestosql.spi.function.OutputFunction;
 import io.prestosql.spi.function.SqlType;
-import io.prestosql.spi.type.DoubleType;
 import io.prestosql.spi.type.StandardTypes;
+import io.prestosql.spi.type.TinyintType;
 
 /**
  * retention(event_time, query_date, time_window)
@@ -55,21 +55,23 @@ public class RetentionFunction {
     @InputFunction
     public static void input(SliceState state, // 每个分组的状态
         @SqlType(StandardTypes.BIGINT) long eventTime, // 事件时间，原始值，单位：ms
-        @SqlType(StandardTypes.INTEGER) long startDate, // 开始时间
+        @SqlType(StandardTypes.INTEGER) long startDate, // 开始时间(yyMMdd)
         @SqlType(StandardTypes.INTEGER) long timeWin) { // 时间窗口，如7天留存
         Slice slice = state.getSlice();
         // slice定长。长度为timeWin+1个int byte
         if (null == slice)
-            slice = Slices.allocate(((int)timeWin + 1)*Integer.BYTES);
+            slice = Slices.allocate(1);
         // 将事件时间格式化为yyyy-MM-dd格式，为了与开始时间，结束时间算间隔
         String xwhen = new SimpleDateFormat(DATE_FORMAT).format(new Date(eventTime));
         String xstart = intDateToString((int)startDate);
-        int days = days(xstart, xwhen);
+        int days = days(xstart, xwhen); //求两个时间的间隔
         if (days < 0 || days>timeWin)
             return;
-        slice.setInt(days*Integer.BYTES, 1);
+        byte var = slice.getByte(0);
+        slice.setByte(0, (byte)(var | (0x1 << days))); 
         state.setSlice(slice);
     }
+    
 
     @CombineFunction
     public static void combine(SliceState state, SliceState otherState) {
@@ -80,11 +82,7 @@ public class RetentionFunction {
         if (null == slice) {
             state.setSlice(otherSlice);
         } else {
-            // 存的是byte,直接index += Byte.BYTES
-            for (int index = 0; index < slice.length(); index += Integer.BYTES) {
-                // 各节点的中间结果按位做或运算，有留存的就是1，没有的就是0
-                slice.setInt(index, slice.getByte(index) | otherSlice.getByte(index));
-            }
+                slice.setByte(0, slice.getByte(0) | otherSlice.getByte(0));
             state.setSlice(slice);
         }
     }
@@ -95,7 +93,7 @@ public class RetentionFunction {
      * @param state
      * @param out
      */
-    @OutputFunction("array(double)")
+    @OutputFunction("tinyint")
     public static void output(SliceState state, BlockBuilder out) {
         // 获取最终的聚合状态
         Slice slice = state.getSlice();
@@ -105,9 +103,7 @@ public class RetentionFunction {
         }
         // 返回结果
         BlockBuilder blockBuilder = out.beginBlockEntry();
-        for (int index = 0; index < slice.length(); index += Integer.BYTES) {
-            DoubleType.DOUBLE.writeDouble(blockBuilder, slice.getInt(index));
-        }
+        TinyintType.TINYINT.writeSlice(blockBuilder, slice);
         out.closeEntry();
     }
 
