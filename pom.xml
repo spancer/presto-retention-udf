@@ -18,8 +18,7 @@
 	<groupId>com.coomia</groupId>
 	<artifactId>coomia-presto-udf</artifactId>
 	<version>1</version>
-	<packaging>jar </packaging>
-
+	<packaging>jar</packaging>
 	<properties>
 		<skipproguard>true</skipproguard>
 		<redis.version>3.1.0</redis.version>
@@ -88,12 +87,6 @@
 			</resource>
 		</resources>
 		<plugins>
-			<plugin>
-				<groupId>com.facebook.presto</groupId>
-				<artifactId>presto-maven-plugin</artifactId>
-				<version>0.3</version>
-				<extensions>true</extensions>
-			</plugin>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-shade-plugin</artifactId>
