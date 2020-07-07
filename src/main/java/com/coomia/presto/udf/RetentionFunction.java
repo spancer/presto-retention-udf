@@ -3,18 +3,16 @@
  * Copyright (c) 2015-2020 Coomia Network Technology Co., Ltd. All Rights Reserved.
  *
  * <p>
- * This software is licensed not sold. Use or reproduction of this software by any unauthorized
- * individual or entity is strictly prohibited. This software is the confidential and proprietary
- * information of Coomia Network Technology Co., Ltd. Disclosure of such confidential information
- * and shall use it only in accordance with the terms of the license agreement you entered into with
- * Coomia Network Technology Co., Ltd.
+ * This software is licensed not sold. Use or reproduction of this software by any unauthorized individual or entity is
+ * strictly prohibited. This software is the confidential and proprietary information of Coomia Network Technology Co.,
+ * Ltd. Disclosure of such confidential information and shall use it only in accordance with the terms of the license
+ * agreement you entered into with Coomia Network Technology Co., Ltd.
  *
  * <p>
- * Coomia Network Technology Co., Ltd. MAKES NO REPRESENTATIONS OR WARRANTIES ABOUT THE SUITABILITY
- * OF THE SOFTWARE, EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, OR NON-INFRINGEMENT. Coomia Network
- * Technology Co., Ltd. SHALL NOT BE LIABLE FOR ANY DAMAGES SUFFERED BY LICENSEE AS A RESULT OF
- * USING, MODIFYING OR DISTRIBUTING THIS SOFTWARE OR ANY DERIVATIVES THEREOF.
+ * Coomia Network Technology Co., Ltd. MAKES NO REPRESENTATIONS OR WARRANTIES ABOUT THE SUITABILITY OF THE SOFTWARE,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+ * PARTICULAR PURPOSE, OR NON-INFRINGEMENT. Coomia Network Technology Co., Ltd. SHALL NOT BE LIABLE FOR ANY DAMAGES
+ * SUFFERED BY LICENSEE AS A RESULT OF USING, MODIFYING OR DISTRIBUTING THIS SOFTWARE OR ANY DERIVATIVES THEREOF.
  *******************************************************************************/
 
 package com.coomia.presto.udf;
@@ -34,13 +32,11 @@ import io.prestosql.spi.function.Description;
 import io.prestosql.spi.function.InputFunction;
 import io.prestosql.spi.function.OutputFunction;
 import io.prestosql.spi.function.SqlType;
+import io.prestosql.spi.type.DoubleType;
 import io.prestosql.spi.type.StandardTypes;
-import io.prestosql.spi.type.TinyintType;
 
 /**
- * retention(event_time, query_date, time_window)
- * 返回time_window大小(如7天）的[0,0,0,0,0,0,0] slice，每位记录该用户在当天是否
- * 满足事件发生（发登录）
+ * retention(event_time, query_date, time_window) 返回time_window大小(如7天）的[0,0,0,0,0,0,0] slice，每位记录该用户在当天是否 满足事件发生（发登录）
  * 
  * @author spancer
  * @date 2020/07/04
@@ -56,22 +52,21 @@ public class RetentionFunction {
     public static void input(SliceState state, // 每个分组的状态
         @SqlType(StandardTypes.BIGINT) long eventTime, // 事件时间，原始值，单位：ms
         @SqlType(StandardTypes.INTEGER) long startDate, // 开始时间(yyMMdd)
-        @SqlType(StandardTypes.INTEGER) long timeWin) { // 时间窗口，如7天留存
+        @SqlType(StandardTypes.INTEGER) long timeWin) { // 时间窗口，如7天留存 
         Slice slice = state.getSlice();
-        // slice定长。长度为timeWin+1个int byte
+        // slice定长，用一个INT数字(32bit)来表示timeWin各时间是否有值。
         if (null == slice)
-            slice = Slices.allocate(1);
+            slice = Slices.allocate(Integer.BYTES);
         // 将事件时间格式化为yyyy-MM-dd格式，为了与开始时间，结束时间算间隔
         String xwhen = new SimpleDateFormat(DATE_FORMAT).format(new Date(eventTime));
         String xstart = intDateToString((int)startDate);
-        int days = days(xstart, xwhen); //求两个时间的间隔
-        if (days < 0 || days>timeWin)
+        int days = days(xstart, xwhen); // 求两个时间的间隔
+        if (days < 0 || days > timeWin)
             return;
         byte var = slice.getByte(0);
-        slice.setByte(0, (byte)(var | (0x1 << days))); 
+        slice.setInt(0, (byte)(var | (0x1 << days)));
         state.setSlice(slice);
     }
-    
 
     @CombineFunction
     public static void combine(SliceState state, SliceState otherState) {
@@ -82,7 +77,7 @@ public class RetentionFunction {
         if (null == slice) {
             state.setSlice(otherSlice);
         } else {
-                slice.setByte(0, slice.getByte(0) | otherSlice.getByte(0));
+            slice.setInt(0, slice.getByte(0) | otherSlice.getByte(0));
             state.setSlice(slice);
         }
     }
@@ -93,7 +88,7 @@ public class RetentionFunction {
      * @param state
      * @param out
      */
-    @OutputFunction("tinyint")
+    @OutputFunction("array(double)")
     public static void output(SliceState state, BlockBuilder out) {
         // 获取最终的聚合状态
         Slice slice = state.getSlice();
@@ -103,7 +98,11 @@ public class RetentionFunction {
         }
         // 返回结果
         BlockBuilder blockBuilder = out.beginBlockEntry();
-        TinyintType.TINYINT.writeSlice(blockBuilder, slice);
+        int result = slice.getInt(0);
+        String binary = Integer.toBinaryString(result);
+        for (int i = 0; i < binary.length(); i++) {
+            DoubleType.DOUBLE.writeDouble(blockBuilder, binary.charAt(i));
+        }
         out.closeEntry();
     }
 
