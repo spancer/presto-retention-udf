@@ -41,7 +41,7 @@ import io.prestosql.spi.type.StandardTypes;
  * @date 2020/07/05
  */
 @AggregationFunction("retention")
-@Description("retention function by 雷鹏")
+@Description("retention function")
 public class RetentionFunction {
 
     // 时间需要格式化为这个格式
